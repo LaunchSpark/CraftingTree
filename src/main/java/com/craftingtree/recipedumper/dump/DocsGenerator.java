@@ -17,6 +17,7 @@ public final class DocsGenerator {
         Files.createDirectories(docsRoot.resolve("examples"));
 
         Files.writeString(docsRoot.resolve("README.md"), buildReadme(), StandardCharsets.UTF_8);
+        Files.writeString(docsRoot.resolve("architecture.md"), buildArchitecture(), StandardCharsets.UTF_8);
         Files.writeString(docsRoot.resolve("schema_raw_notes.md"), buildRawNotes(), StandardCharsets.UTF_8);
 
         JsonObject schema = buildNormalizedSchema();
@@ -24,6 +25,8 @@ public final class DocsGenerator {
 
         Files.writeString(docsRoot.resolve("examples/normalized_example_crafting_shaped.json"), exampleShaped(), StandardCharsets.UTF_8);
         Files.writeString(docsRoot.resolve("examples/normalized_example_create_mixing.json"), exampleCreateMixing(), StandardCharsets.UTF_8);
+        Files.writeString(docsRoot.resolve("examples/normalized_example_heuristic_unknown.json"), exampleHeuristicUnknown(), StandardCharsets.UTF_8);
+        Files.writeString(docsRoot.resolve("examples/normalized_example_create_sequenced_assembly.json"), exampleCreateSequencedAssembly(), StandardCharsets.UTF_8);
         Files.writeString(docsRoot.resolve("examples/tag_example.json"), exampleTag(), StandardCharsets.UTF_8);
     }
 
@@ -36,6 +39,10 @@ public final class DocsGenerator {
                 + "- `tags/` item tag dumps.\n"
                 + "- `meta.json` generation metadata and warnings/errors.\n"
                 + "- `index.json` listing of all recipes with paths.\n\n"
+                + "## Architecture (JEI/NEI-style adapters)\n\n"
+                + "Normalization uses a JEI/NEI-style adapter pipeline: the core dump reads authoritative runtime recipes, and ordered adapters interpret them.\n"
+                + "Adapters run by `priority` (higher first) and only act when `matches(ctx)` is true. The first successful adapter wins.\n"
+                + "Unknown recipe types still normalize via the heuristic fallback adapter.\n\n"
                 + "## Usage\n\n"
                 + "Run `/recipe_dump` (or `/recipe_dump recipes` or `/recipe_dump tags`) after datapacks and KubeJS scripts load.\n"
                 + "If you reload datapacks with `/reload`, rerun the command to regenerate.\n\n"
@@ -46,10 +53,56 @@ public final class DocsGenerator {
                 + "## Guarantees\n\n"
                 + "- Recipes reflect the runtime server `RecipeManager` state.\n"
                 + "- Recipes removed by datapacks/KubeJS are not present.\n"
-                + "- Tag dumps reflect the active datapack state.\n\n"
+                + "- Tag dumps reflect the active datapack state.\n"
+                + "- Raw dump is authoritative; normalized output is best-effort and non-destructive.\n\n"
+                + "## Adding an Adapter\n\n"
+                + "1) Implement `INormalizerAdapter` in `normalize/adapters/`.\n"
+                + "2) Use `ctx.rawJson()` for parsing when available, and always return a `NormalizedRecipe`.\n"
+                + "3) Register the adapter in `NormalizerRegistry.createDefault()` with a priority.\n\n"
+                + "### Adapter Template\n\n"
+                + "```\n"
+                + "public final class ModRecipeNormalizerTemplate implements INormalizerAdapter {\n"
+                + "    private static final int PRIORITY = 900;\n"
+                + "    private static final String MODID = \"<modid>\";\n"
+                + "\n"
+                + "    @Override\n"
+                + "    public String getName() { return MODID + \":adapter\"; }\n"
+                + "\n"
+                + "    @Override\n"
+                + "    public int getPriority() { return PRIORITY; }\n"
+                + "\n"
+                + "    @Override\n"
+                + "    public boolean matches(RecipeContext ctx) {\n"
+                + "        return ctx.typeId().startsWith(MODID + \":\");\n"
+                + "    }\n"
+                + "\n"
+                + "    @Override\n"
+                + "    public NormalizedRecipe normalize(RecipeContext ctx) {\n"
+                + "        NormalizedRecipe out = ctx.baseRecipe();\n"
+                + "        // Parse ctx.rawJson() into inputs/outputs, add notes/warnings as needed.\n"
+                + "        return out;\n"
+                + "    }\n"
+                + "}\n"
+                + "```\n\n"
+                + "See `architecture.md` for the full pipeline overview.\n\n"
                 + "## Known Limitations\n\n"
                 + "- Custom modded recipe types may only be partially normalized.\n"
                 + "- When a recipe cannot be normalized, an empty structure is still emitted with warnings.\n";
+    }
+
+    private static String buildArchitecture() {
+        return "# Recipe Dump Architecture\n\n"
+                + "The dump pipeline mirrors a JEI/NEI-style separation of **authoritative data** and **adapter interpretation**.\n\n"
+                + "## Pipeline\n\n"
+                + "```\n"
+                + "RecipeManager (runtime) -> RawSerializer -> NormalizerRegistry -> normalized outputs\n"
+                + "                                    \\-> docs + index + meta\n"
+                + "```\n\n"
+                + "## Adapter Order\n\n"
+                + "- Adapters run in priority order (higher first).\n"
+                + "- Only adapters whose `matches(ctx)` return true are invoked.\n"
+                + "- If an adapter throws, the registry records a warning and continues.\n"
+                + "- The `GenericJsonHeuristicNormalizer` is the final fallback.\n";
     }
 
     private static String buildRawNotes() {
@@ -198,6 +251,58 @@ public final class DocsGenerator {
                 + "    \"origin\": \"runtime\",\n"
                 + "    \"raw_path\": \"raw/data/create/recipes/mixing/example.json\",\n"
                 + "    \"serializer\": \"create:mixing\",\n"
+                + "    \"warnings\": []\n"
+                + "  }\n"
+                + "}\n";
+    }
+
+    private static String exampleHeuristicUnknown() {
+        return "{\n"
+                + "  \"schema_version\": 1,\n"
+                + "  \"id\": \"modded:unknown_recipe\",\n"
+                + "  \"type\": \"modded:custom_machine\",\n"
+                + "  \"group\": \"\",\n"
+                + "  \"category\": \"\",\n"
+                + "  \"inputs\": [\n"
+                + "    { \"kind\": \"item\", \"id\": \"minecraft:iron_ingot\", \"count\": 1, \"options\": [] }\n"
+                + "  ],\n"
+                + "  \"outputs\": [\n"
+                + "    { \"kind\": \"item\", \"id\": \"modded:compressed_iron\", \"count\": 1, \"nbt\": null }\n"
+                + "  ],\n"
+                + "  \"byproducts\": [\n"
+                + "    { \"kind\": \"item\", \"id\": \"modded:dust\", \"count\": 1, \"nbt\": null }\n"
+                + "  ],\n"
+                + "  \"processing\": { \"time_ticks\": null, \"energy\": null, \"heat\": null, \"notes\": [] },\n"
+                + "  \"conditions\": [],\n"
+                + "  \"meta\": {\n"
+                + "    \"origin\": \"runtime\",\n"
+                + "    \"raw_path\": \"raw/data/modded/recipes/unknown_recipe.json\",\n"
+                + "    \"serializer\": \"modded:custom_machine\",\n"
+                + "    \"warnings\": [\"HeuristicNormalizer: output chance=0.2 stored as byproduct.\"]\n"
+                + "  }\n"
+                + "}\n";
+    }
+
+    private static String exampleCreateSequencedAssembly() {
+        return "{\n"
+                + "  \"schema_version\": 1,\n"
+                + "  \"id\": \"create:sequenced_assembly/example\",\n"
+                + "  \"type\": \"create:sequenced_assembly\",\n"
+                + "  \"group\": \"\",\n"
+                + "  \"category\": \"\",\n"
+                + "  \"inputs\": [\n"
+                + "    { \"kind\": \"item\", \"id\": \"minecraft:iron_nugget\", \"count\": 1, \"options\": [] }\n"
+                + "  ],\n"
+                + "  \"outputs\": [\n"
+                + "    { \"kind\": \"item\", \"id\": \"create:precision_mechanism\", \"count\": 1, \"nbt\": null }\n"
+                + "  ],\n"
+                + "  \"byproducts\": [],\n"
+                + "  \"processing\": { \"time_ticks\": null, \"energy\": null, \"heat\": null, \"notes\": [\"sequenced_assembly: steps not flattened (see raw)\"] },\n"
+                + "  \"conditions\": [],\n"
+                + "  \"meta\": {\n"
+                + "    \"origin\": \"runtime\",\n"
+                + "    \"raw_path\": \"raw/data/create/recipes/sequenced_assembly/example.json\",\n"
+                + "    \"serializer\": \"create:sequenced_assembly\",\n"
                 + "    \"warnings\": []\n"
                 + "  }\n"
                 + "}\n";
