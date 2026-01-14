@@ -1,6 +1,8 @@
 package com.craftingtree.recipedumper.dump;
 
 import com.craftingtree.recipedumper.model.NormalizedRecipe;
+import com.craftingtree.recipedumper.normalize.NormalizerRegistry;
+import com.craftingtree.recipedumper.normalize.RecipeContext;
 import com.craftingtree.recipedumper.util.JsonUtil;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
@@ -57,8 +59,12 @@ public final class RecipeDumpService {
             RecipeManager recipeManager = server.getRecipeManager();
             Map<ResourceLocation, Recipe<?>> recipes = collectRecipes(recipeManager);
             recipeCount = recipes.size();
+            NormalizerRegistry normalizerRegistry = NormalizerRegistry.createDefault();
 
-            for (Map.Entry<ResourceLocation, Recipe<?>> entry : recipes.entrySet()) {
+            List<Map.Entry<ResourceLocation, Recipe<?>>> sortedRecipes = recipes.entrySet().stream()
+                    .sorted(Comparator.comparing(entry -> entry.getKey().toString()))
+                    .toList();
+            for (Map.Entry<ResourceLocation, Recipe<?>> entry : sortedRecipes) {
                 ResourceLocation id = entry.getKey();
                 Recipe<?> recipe = entry.getValue();
                 JsonElement rawJson = JsonNull.INSTANCE;
@@ -80,7 +86,21 @@ public final class RecipeDumpService {
                     rawJson = null;
                 }
 
-                NormalizedRecipe normalized = RecipeNormalizer.normalize(id, recipe, rawJson);
+                JsonElement normalizedRaw = rawJson != null && rawJson.isJsonNull() ? null : rawJson;
+                ResourceLocation typeId = resolveRecipeTypeId(recipe);
+                ResourceLocation serializerId = resolveSerializerId(recipe);
+                RecipeContext ctx = new RecipeContext(
+                        id,
+                        recipe,
+                        typeId,
+                        typeId.toString(),
+                        normalizedRaw,
+                        server.registryAccess(),
+                        serializerId,
+                        "raw/data/" + id.getNamespace() + "/recipes/" + id.getPath() + ".json",
+                        null
+                );
+                NormalizedRecipe normalized = normalizerRegistry.normalize(ctx);
                 if (!rawWritten) {
                     normalized.meta.warnings.add("Raw JSON not available for this recipe.");
                 }
