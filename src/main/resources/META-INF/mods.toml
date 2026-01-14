@@ -1,0 +1,24 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="recipedumper"
+version="${file.jarVersion}"
+displayName="Recipe Dump"
+authors="CraftingTree"
+description='''Runtime recipe and tag dump utility.'''
+
+[[dependencies.recipedumper]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.recipedumper]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1]"
+ordering="NONE"
+side="BOTH"
